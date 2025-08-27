@@ -1,57 +1,53 @@
-from matplotlib import pyplot as plt
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import IsolationForest
+import pandas as pd
+
+# ----- EXTRACT FEATURES -----
+
 import fastf1
 
-# Load session, filter out inlaps, outlaps, and restrict to green flag laps
+# Load session
 session = fastf1.get_session(2025, 'Belgium', 'R')
 session.load(laps=True)
-race_laps = (session.laps
-                .pick_track_status("1")
-                .loc[lambda df: df["PitInTime"].isna() & df["PitOutTime"].isna()])
 
-# convert to a data frame compatible with Isolation Forest
-df = (race_laps
-    .assign(LapTime_s = race_laps["LapTime"].dt.total_seconds())
-    .loc[:, ["LapNumber", "LapTime_s"]]
-    .dropna())
-df = df[df["LapNumber"] > 2]
+# Get all information of the corners for this circuit
+# We will use X, Y, Distance, and
+corners = session.get_circuit_info().corners
+print(corners)
 
-# Plot data on scatter graph
-plt.scatter(
-    df["LapNumber"],
-    df["LapTime_s"],
-    s=15
-)
-plt.xlabel("Lap number")
-plt.ylabel("Lap time [s]")
-plt.title("All drivers – 2021 Silverstone GP")
-plt.show()
+# Get all the information on the laps by every driver
+laps = session.laps
+laps = laps.pick_accurate()
+print(laps)
 
-# Scale so lap number doesnt dominate anomalies
-X = StandardScaler().fit_transform(df)
+# ----- DETERMINE CORNER ZONES -----
 
-# Fit model and add a boolean column which defines whether a lap is an anomaly
-iso = IsolationForest(contamination=0.045, random_state=42).fit(X)
-df["anomaly"] = iso.predict(X) == -1
+class CornerZone:
+    def __init__(self, start, apex, end):
+        self.start = start
+        self.end = end
+        self.apex = apex
 
-# Normal laps
-plt.scatter(
-    df.loc[~df["anomaly"], "LapNumber"],
-    df.loc[~df["anomaly"], "LapTime_s"],
-    c="blue", s=15, label="Normal"
-)
+    def print(self):
+        print(f"Start: {self.start}\nApex: {self.apex}\nEnd: {self.end}\n")
 
-# Anomalous laps
-plt.scatter(
-    df.loc[df["anomaly"], "LapNumber"],
-    df.loc[df["anomaly"], "LapTime_s"],
-    c="red", s=15, label="Anomaly"
-)
+cornerZones = []
 
-plt.xlabel("Lap number")
-plt.ylabel("Lap time [s]")
-plt.title("Lap-time anomalies")
-plt.legend()
-plt.tight_layout()
-plt.show()
+for idx, corner in corners.iterrows():
+    if idx == 0:
+        start = 0
+        apex = corner['Distance']
+
+    else:
+        previousEnd = apex + (corner['Distance'] - apex) / 2
+
+        cornerZones.append(CornerZone(start, apex, previousEnd))
+
+        start = previousEnd
+        apex = corner['Distance']
+
+previousEnd = apex + (corner['Distance'] - apex) / 2
+cornerZones.append(CornerZone(start, apex, previousEnd + 20))
+
+print(len(cornerZones))
+
+for i in cornerZones:
+    i.print()
