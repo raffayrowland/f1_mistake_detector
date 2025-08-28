@@ -5,7 +5,7 @@ import pandas as pd
 import fastf1
 
 # Load session
-session = fastf1.get_session(2025, 'Belgium', 'R')
+session = fastf1.get_session(2025, 'Hungary', 'R')
 session.load(laps=True)
 
 # Get all information of the corners for this circuit
@@ -24,17 +24,14 @@ print(laps)
 Data object in this class:
 
 {
-    "laps": [
-        dataPoints: [          # for lap 1, 2, etc.
-            {
-                "speed": speed
-                "throttle": throttle
-                "gear": gear
-                "brake": brake
-                "distance": distance
-            }, ...
-        ], ...
-    ]   
+    "dataPoints" : [
+        {
+            "speed": 0,
+            "throttle": 0,
+            "gear": 0,
+            "brake": 0,
+            "distance": 0
+        },
 }
 
 """
@@ -43,7 +40,7 @@ class CornerZone:
     def __init__(self, start, apex, end, cornerNumber):
         self.cornerNumber = cornerNumber
         self.data = {
-            "laps": []
+            "dataPoints": []
         }
         self.start = start
         self.apex = apex
@@ -59,7 +56,14 @@ class CornerZone:
         return self.end
 
     def addToData(self, data):
-        self.data["laps"].append(data)
+        self.data["dataPoints"].append(data)
+
+    def getData(self):
+        return self.data
+
+lap = session.laps.pick_fastest()
+tel = lap.get_car_data().add_distance()
+trackLength = float(tel['Distance'].max())
 cornerZones = []
 
 for idx, corner in corners.iterrows():
@@ -76,18 +80,13 @@ for idx, corner in corners.iterrows():
         apex = corner['Distance']
 
 previousEnd = apex + (corner['Distance'] - apex) / 2
-cornerZones.append(CornerZone(start, apex, previousEnd + 20, corner["Number"]))
+cornerZones.append(CornerZone(start, apex, trackLength, corner["Number"]))
 
 for i in cornerZones: i.print()
 
 # ----- GET CORNER DATA -----
 
-cornerIndex = 0
-
-# Get the telemetry data for the McLaren team
-# Iterate through each lap
-for idx, lap in laps.pick_teams("McLaren").iterrows():
-    dataPoint = {
+dataPoint = {
         "speed": 0,
         "throttle": 0,
         "gear": 0,
@@ -95,10 +94,13 @@ for idx, lap in laps.pick_teams("McLaren").iterrows():
         "distance": 0
     }
 
+# Get the telemetry data for the McLaren team
+# Iterate through each lap
+for idx, lap in laps.pick_teams("McLaren").iterrows():
     # Get the telemetry for this lap
     tel = lap.get_telemetry()
     print(len(tel), "len telemetry")
-    lapDataPoints = [dataPoint for i in range(len(tel))]
+    lapDataPoints = [dataPoint.copy() for i in range(len(tel))]
 
     # Gets a series of all the data (so all the speed data over a single lap for example)
     allSpeed = tel['Speed']
@@ -111,10 +113,7 @@ for idx, lap in laps.pick_teams("McLaren").iterrows():
     print(len(allGear), "len gear")
     print(len(allThrottle), "len throttle")
     print(len(allBrake), "len brake")
-    print(len(allDistance), "len distance")
-
-    lowestDistance = None
-    highestDistance = None
+    print(len(allDistance), "len distance\n")
 
     # Goes through each speed reading and adds it to the lap's data
     for speed_idx, speed in enumerate(allSpeed):
@@ -123,16 +122,60 @@ for idx, lap in laps.pick_teams("McLaren").iterrows():
     for gear_idx, gear in enumerate(allGear):
         lapDataPoints[gear_idx]['gear'] = gear
 
+    for throttle_idx, throttle in enumerate(allThrottle):
+        lapDataPoints[throttle_idx]['throttle'] = throttle
+
     for brake_idx, brake in enumerate(allBrake):
         lapDataPoints[brake_idx]['brake'] = brake
 
     for distance_idx, distance in enumerate(allDistance):
-        if not lowestDistance: lowestDistance = distance
-        if not highestDistance: highestDistance = distance
-
-        if distance < lowestDistance: lowestDistance = distance
-        elif distance > highestDistance: highestDistance = distance
-
         lapDataPoints[distance_idx]['distance'] = distance
 
-    print(lapDataPoints)
+    cornerIndex = 0
+
+    for dataPoint in lapDataPoints:
+        distance = dataPoint['distance']
+        currentCornerRange = [cornerZones[cornerIndex].getLower(), cornerZones[cornerIndex].getUpper()]
+
+        if currentCornerRange[0] <= distance < currentCornerRange[1]:
+            cornerZones[cornerIndex].addToData(dataPoint)
+            continue
+
+        if cornerIndex == len(cornerZones) - 1:
+            print(f"No next corner {cornerIndex}")
+            continue
+
+        nextCornerRange = [cornerZones[cornerIndex + 1].getLower(), cornerZones[cornerIndex + 1].getUpper()]
+
+        if nextCornerRange[0] <= distance < nextCornerRange[1]:
+            cornerIndex += 1
+            cornerZones[cornerIndex].addToData(dataPoint)
+
+        else:
+            print(f"Skipped data at corner {cornerIndex}")
+
+for i in range(len(cornerZones)):
+    cornerZones[i].print()
+    print(len(cornerZones[i].getData()['dataPoints']))
+
+# ----- PLOT SPEED/DISTANCE GRAPHS -----
+
+import matplotlib.pyplot as plt
+
+for corner in cornerZones:
+    data = corner.getData()['dataPoints']
+
+    xAxis = [dataPoint.get("distance") for dataPoint in data]
+    yAxis = [dataPoint.get("speed") for dataPoint in data]
+
+    pairs = sorted(zip(yAxis, xAxis))
+    xAxis, yAxis = zip(*pairs)
+
+    plt.figure()
+    plt.scatter(yAxis, xAxis, s=8)
+    plt.xlabel("Distance (m)")
+    plt.ylabel("Speed (km/h)")
+    plt.title(f"Corner {corner.cornerNumber}: Speed vs Distance")
+    plt.grid(True)
+
+plt.show()
