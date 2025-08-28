@@ -15,7 +15,7 @@ print(corners)
 
 # Get all the information on the laps by every driver
 laps = session.laps
-laps = laps.pick_accurate()
+laps = laps.pick_accurate()  # Pick only laps under green or yellow flag, that are not an in or out lap
 print(laps)
 
 # ----- DETERMINE CORNER ZONES -----
@@ -32,10 +32,13 @@ Data object in this class:
             "brake": 0,
             "distance": 0
         },
+    ]
 }
 
 """
 
+# The object that contains all the data about a single corner
+# Corner number, start of corner zone, end of corner zone, location of apex, data on car
 class CornerZone:
     def __init__(self, start, apex, end, cornerNumber):
         self.cornerNumber = cornerNumber
@@ -61,11 +64,14 @@ class CornerZone:
     def getData(self):
         return self.data
 
+# determine the length of the track
 lap = session.laps.pick_fastest()
 tel = lap.get_car_data().add_distance()
 trackLength = float(tel['Distance'].max())
+
 cornerZones = []
 
+# Iterate through each corner to define the corner zones
 for idx, corner in corners.iterrows():
     if idx == 0:
         start = 0
@@ -100,6 +106,8 @@ for idx, lap in laps.pick_teams("McLaren").iterrows():
     # Get the telemetry for this lap
     tel = lap.get_telemetry()
     print(len(tel), "len telemetry")
+
+    # Array that holds all the data for a single lap
     lapDataPoints = [dataPoint.copy() for i in range(len(tel))]
 
     # Gets a series of all the data (so all the speed data over a single lap for example)
@@ -128,15 +136,18 @@ for idx, lap in laps.pick_teams("McLaren").iterrows():
     for brake_idx, brake in enumerate(allBrake):
         lapDataPoints[brake_idx]['brake'] = brake
 
+    # TODO: Convert to using x and y to stop the distance error
     for distance_idx, distance in enumerate(allDistance):
         lapDataPoints[distance_idx]['distance'] = distance
 
     cornerIndex = 0
 
+    # move each data point to the corresponding corner object
     for dataPoint in lapDataPoints:
         distance = dataPoint['distance']
-        currentCornerRange = [cornerZones[cornerIndex].getLower(), cornerZones[cornerIndex].getUpper()]
+        currentCornerRange = [cornerZones[cornerIndex].getLower(), cornerZones[cornerIndex].getUpper()]  # get the bounds for the current corner
 
+        # place the data point to the corresponding corner object
         if currentCornerRange[0] <= distance < currentCornerRange[1]:
             cornerZones[cornerIndex].addToData(dataPoint)
             continue
