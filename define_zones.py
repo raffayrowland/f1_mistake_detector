@@ -3,6 +3,7 @@ import fastf1
 class MarshalSectorData:
     def __init__(self, sectorNumber, startDistance):
         self.start = startDistance
+        self.length = 0
         self.end = 0
         self.sectorNumber = sectorNumber
         self.xyBounds = []
@@ -48,6 +49,10 @@ def getSectors(year, gp, identifier):
     trackLength = float(fastestLapTel.get_car_data().add_distance()['Distance'].max())
     sectors[-1].setEnd(trackLength)
 
+    # calculate the length of a sector even if it crosses the start/finish line
+    for sector in sectors:
+        sector.length = (sector.end - sector.start) % trackLength
+
     for idx, point in fastestLapTel.get_telemetry().iterrows():
         # if point['Source'] == "interpolation":
         #     continue
@@ -57,11 +62,8 @@ def getSectors(year, gp, identifier):
         distance = point['Distance']
 
         for sector in sectors:
-            if sector.start <= distance < sector.end:
-                sector.addToBounds([x, y])
-
-            elif sector is sectors[-1] and distance == sector.end:
-                sector.addToBounds([x, y])
+            if (distance - sector.start) % trackLength < sector.length:
+                sector.xyBounds.append([x, y])
 
     for sector in sectors:
         sector.print()
