@@ -1,7 +1,7 @@
-from define_zones import getSectors, plotSectors, MarshalSectorData, addDataToSectors, plotSectors3D
+from define_zones import getSectors, plotSectors, MarshalSectorData, addDataToSectors, plotSectors3D, plotSectors3DByTyre
 import fastf1
 
-session = fastf1.get_session(2024, "Silverstone", "R")
+session = fastf1.get_session(2025, "Miami", "R")
 session.load(laps=True)
 
 sectors = getSectors(session)
@@ -11,5 +11,3 @@ sectors = getSectors(session)
 sectors = addDataToSectors(session, sectors)
 
 plotSectors3D(sectors)
-
-# Next: write function that finds closest point in track definition -> work out what sector a data point is in

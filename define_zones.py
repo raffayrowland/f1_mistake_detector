@@ -49,8 +49,16 @@ class MarshalSectorData:
             print(f"Could not print Sector {self.sectorNumber}.\n"
                   f"Start: {self.start}, end: {self.end}\n")
 
+# ----- DATA PROCESSING -----
 
 def getSectors(session):
+    """
+    This function compartmentalises the circuit into it's marshal sectors, using the fastest qualifying lap as reference
+    and mapping x, y co-ordinates to each sector.
+
+    :param session: fastf1.core.Session object
+    :return: array of MarshalSectorData objects
+    """
     fastestLapTel = session.laps.pick_fastest()
     marshalSectors = session.get_circuit_info().marshal_sectors
 
@@ -96,53 +104,68 @@ def addDataToSectors(session, sectors):
     in sector object there is sector.data, which is a json containing a list "datapoints". This list contains these dictionaries:
 
     dataPoint = {
-        "speed": 0,
-        "throttle": 0,
-        "gear": 0,
-        "brake": 0,
-        "x": 0,
-        "y": 0
+        "tyre": string
+        "speed": float,
+        "throttle": float,
+        "gear": int,
+        "brake": boolean,
+        "x": float,
+        "y": float
     }
+
+    :param session: fastf1.core.Session object
+    :param sectors: array of MarshalSectorData objects
+    :return: array of MarshalSectorData objects
 
     """
 
-    laps = session.laps.pick_drivers("PIA").pick_accurate()
+    laps = session.laps.pick_drivers("PIA")
+    laps = laps.pick_accurate()
 
-    for idx, reading in laps.get_telemetry().iterrows():
-        if reading["Source"] == "interpolation":
+    compounds = ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"]
+
+    for compound in compounds:
+        tyreLaps = laps.pick_compounds(compound)
+
+        if tyreLaps.empty:
             continue
 
-        speed = reading['Speed']
-        throttle = reading['Throttle']
-        brake = reading['Brake']
-        gear = reading['nGear']
-        x = reading['X']
-        y = reading['Y']
+        for idx, reading in tyreLaps.get_telemetry().iterrows():
+            if reading["Source"] == "interpolation":
+                continue
 
-        dataPoint = {
-            "speed": speed,
-            "throttle": throttle,
-            "gear": gear,
-            "brake": brake,
-            "x": x,
-            "y": y
-        }
+            speed = reading['Speed']
+            throttle = reading['Throttle']
+            brake = reading['Brake']
+            gear = reading['nGear']
+            x = reading['X']
+            y = reading['Y']
 
-        lowestDistance = None
-        closestSector = None
+            dataPoint = {
+                "tyre": compound,
+                "speed": speed,
+                "throttle": throttle,
+                "gear": gear,
+                "brake": brake,
+                "x": x,
+                "y": y
+            }
 
-        for sector in sectors:
-            distance = sector.getClosestPoint([x, y])
+            lowestDistance = None
+            closestSector = None
 
-            if lowestDistance is None:
-                lowestDistance = distance
-                closestSector = sector
+            for sector in sectors:
+                distance = sector.getClosestPoint([x, y])
 
-            if distance < lowestDistance:
-                closestSector = sector
-                lowestDistance = distance
+                if lowestDistance is None:
+                    lowestDistance = distance
+                    closestSector = sector
 
-        closestSector.addToData(dataPoint)
+                if distance < lowestDistance:
+                    closestSector = sector
+                    lowestDistance = distance
+
+            closestSector.addToData(dataPoint)
 
     return sectors
 
@@ -217,6 +240,58 @@ def plotSectors3D(sectors, out_dir="plots"):
         )
 
         filename = os.path.join(out_dir, f"sector_{sector.sectorNumber}_xyz_speed.html")
+        fig.write_html(filename, include_plotlyjs="cdn", full_html=True)
+        saved.append(filename)
+
+    return saved
+
+def plotSectors3DByTyre(sectors, out_dir="plots"):
+    import os
+    import plotly.graph_objects as go
+
+    os.makedirs(out_dir, exist_ok=True)
+    saved = []
+    color_map = {
+        "hard": "white",
+        "medium": "yellow",
+        "soft": "red",
+        "intermediate": "green",
+        "wet": "blue",
+    }
+
+    for sector in sectors:
+        dps = sector.data.get("dataPoints", [])
+        if not dps:
+            continue
+
+        xs = [dp.get("x") for dp in dps]
+        ys = [dp.get("y") for dp in dps]
+        zs = [dp.get("speed") for dp in dps]
+        colors = [color_map.get(str(dp.get("tyre", "")).lower(), "gray") for dp in dps]
+
+        fig = go.Figure(
+            data=[go.Scatter3d(
+                x=xs, y=ys, z=zs,
+                mode="markers",
+                marker=dict(size=2, color=colors)
+            )]
+        )
+        fig.update_layout(
+            title=f"Sector {sector.sectorNumber}: X, Y, Speed by Tyre",
+            paper_bgcolor="black",
+            plot_bgcolor="black",
+            font=dict(color="white"),
+            showlegend=False,
+            scene=dict(
+                bgcolor="black",
+                xaxis=dict(title="X", backgroundcolor="black", gridcolor="#333", zerolinecolor="#444", color="white"),
+                yaxis=dict(title="Y", backgroundcolor="black", gridcolor="#333", zerolinecolor="#444", color="white"),
+                zaxis=dict(title="Speed", backgroundcolor="black", gridcolor="#333", zerolinecolor="#444", color="white")
+            ),
+            title_font_color="white"
+        )
+
+        filename = os.path.join(out_dir, f"sector_{sector.sectorNumber}_xyz_speed_tyre.html")
         fig.write_html(filename, include_plotlyjs="cdn", full_html=True)
         saved.append(filename)
 
